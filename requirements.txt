@@ -1,0 +1,28 @@
+# ---- Data retrieval & processing ----
+yfinance>=0.2.40,<0.3
+pandas>=2.1.0,<2.3
+numpy>=1.26.0,<2.0
+pyarrow>=14.0.0,<17
+
+# ---- Technical feature engineering ----
+ta>=0.11.0,<0.12
+
+# ---- NLP & sentiment (FinBERT) ----
+transformers>=4.40.0,<4.45
+torch>=2.2.0,<2.5
+
+# ---- Machine learning ----
+scikit-learn>=1.4.0,<1.6
+xgboost>=2.0.0,<2.2
+joblib>=1.3.0,<1.5
+
+# ---- Visualization & dashboard ----
+streamlit>=1.35.0,<1.38
+plotly>=5.20.0,<5.23
+matplotlib>=3.8.0,<3.10
+
+# ---- Utilities ----
+python-dotenv>=1.0.0,<2.0
+
+# ---- Testing ----
+pytest>=8.0.0,<9.0
