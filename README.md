@@ -1,3 +1,4 @@
+---
 # 📈 Stock Sentiment Predictor
 
 A production-structured ML pipeline that predicts next-day stock price
@@ -6,6 +7,9 @@ volatility) with **FinBERT-scored news sentiment**, trained with an
 **XGBoost classifier** and served through an interactive **Streamlit
 dashboard**.
 
+🚀 **Live Interactive Dashboard:** [stock-sentiment-predictor-akesh.streamlit.app](https://stock-sentiment-predictor-akesh.streamlit.app/)
+
+---
 ---
 
 ## Architecture
