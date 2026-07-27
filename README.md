@@ -80,7 +80,7 @@ source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-**Requirements:** Python 3.10+. FinBERT (`torch` + `transformers`) will
+**Requirements:** Python 3.10+ to 3.12.x . FinBERT (`torch` + `transformers`) will
 download ~440MB of model weights on first run — a GPU is optional but not
 required for this project's headline volume.
 
