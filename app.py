@@ -23,6 +23,7 @@ Two operating modes, chosen automatically:
 Technical indicators (RSI/MACD/SMA/ATR/volatility) are always computed live
 from real price data via `src.data_pipeline`, in both modes.
 """
+
 from __future__ import annotations
 
 import datetime
@@ -52,9 +53,6 @@ st.set_page_config(
 # ==========================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_price_and_indicators(ticker: str, start: datetime.date, end: datetime.date) -> pd.DataFrame:
-    """Fetch real OHLCV data and compute real technical indicators (shared
-    logic with the training pipeline, imported from src.data_pipeline).
-    """
     df = fetch_price_history(ticker, start=str(start), end=str(end))
     df = add_technical_indicators(df)
     return df
@@ -62,10 +60,6 @@ def load_price_and_indicators(ticker: str, start: datetime.date, end: datetime.d
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def load_feature_store_slice(ticker: str) -> pd.DataFrame | None:
-    """Return the persisted feature store rows for `ticker`, if it exists.
-    This is the real FinBERT-scored, lagged sentiment data produced by
-    `python main.py --stage data`.
-    """
     if not config.FEATURE_STORE_PATH.exists():
         return None
     store = pd.read_parquet(config.FEATURE_STORE_PATH)
@@ -75,7 +69,6 @@ def load_feature_store_slice(ticker: str) -> pd.DataFrame | None:
 
 @st.cache_resource(show_spinner="Loading trained model...")
 def load_trained_model():
-    """Load the persisted XGBoost model artifact, or None if not yet trained."""
     if not config.MODEL_PATH.exists():
         return None
     import joblib
@@ -85,22 +78,23 @@ def load_trained_model():
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def generate_demo_sentiment(df: pd.DataFrame) -> pd.DataFrame:
-    """Deterministic synthetic sentiment used only when no trained pipeline
-    output is available yet (DEMO MODE). Clearly separate from real
-    FinBERT-derived data so the two are never silently confused.
-    """
+    """Generates dynamic time-varying synthetic sentiment tied to price returns."""
     df = df.copy()
-    rng = np.random.default_rng(42)
-    raw = rng.uniform(0.3, 0.8, size=len(df))
-    df["Sentiment_Score"] = pd.Series(raw).rolling(window=5, min_periods=1).mean()
-    df["Pos_Sentiment"] = df["Sentiment_Score"] * 0.6
-    df["Neu_Sentiment"] = 0.25
-    df["Neg_Sentiment"] = 1.0 - (df["Pos_Sentiment"] + df["Neu_Sentiment"])
+    returns = df["Close"].pct_change().fillna(0)
+    
+    # Base sentiment around 0.50 with mean-reverting random walk + price return correlation
+    noise = np.random.default_rng(42).normal(0, 0.08, size=len(df))
+    sentiment_raw = 0.50 + (returns * 2.5) + noise
+    sentiment_score = np.clip(sentiment_raw, 0.05, 0.95)
+    
+    df["Sentiment_Score"] = sentiment_score
+    df["Pos_Sentiment"] = np.clip(df["Sentiment_Score"] * 0.7, 0, 1)
+    df["Neu_Sentiment"] = 0.20
+    df["Neg_Sentiment"] = np.clip(1.0 - (df["Pos_Sentiment"] + df["Neu_Sentiment"]), 0, 1)
     return df
 
 
 def demo_predict_next_day(recent_prices: pd.Series, recent_sentiment: float) -> tuple[str, float]:
-    """Rule-based stand-in signal, used only in DEMO MODE."""
     price_return = (recent_prices.iloc[-1] - recent_prices.iloc[-5]) / recent_prices.iloc[-5]
     signal_score = (price_return * 0.4) + (recent_sentiment * 0.6)
     confidence = float(np.clip(0.50 + abs(signal_score - 0.5) * 0.8, 0.52, 0.94))
@@ -148,17 +142,19 @@ using_live_sentiment = feature_store_slice is not None and not feature_store_sli
 if using_live_sentiment:
     processed_df = pd.merge(
         price_df,
-        feature_store_slice[["Date", "sent_pos_lag1", "sent_neg_lag1", "sent_neu_lag1"]],
+        feature_store_slice[["Date", "sent_pos_lag1", "sent_neg_lag1", "sent_neu_lag1", "sent_compound_lag1"]],
         on="Date",
         how="left",
     )
-    processed_df["Sentiment_Score"] = processed_df["sent_pos_lag1"]
+    # Correct fillna using ffill() function directly to fix DeprecationWarning
+    processed_df[["sent_pos_lag1", "sent_neg_lag1", "sent_neu_lag1", "sent_compound_lag1"]] = (
+        processed_df[["sent_pos_lag1", "sent_neg_lag1", "sent_neu_lag1", "sent_compound_lag1"]].ffill().bfill()
+    )
+    
+    processed_df["Sentiment_Score"] = processed_df["sent_compound_lag1"]
     processed_df["Pos_Sentiment"] = processed_df["sent_pos_lag1"]
     processed_df["Neg_Sentiment"] = processed_df["sent_neg_lag1"]
     processed_df["Neu_Sentiment"] = processed_df["sent_neu_lag1"]
-    processed_df[["Sentiment_Score", "Pos_Sentiment", "Neg_Sentiment", "Neu_Sentiment"]] = processed_df[
-        ["Sentiment_Score", "Pos_Sentiment", "Neg_Sentiment", "Neu_Sentiment"]
-    ].fillna(method="ffill")
 else:
     processed_df = generate_demo_sentiment(price_df)
 

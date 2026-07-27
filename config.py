@@ -35,7 +35,7 @@ FEATURE_IMPORTANCE_PLOT_PATH = DATA_DIR / "feature_importance.png"
 # =========================================================
 TICKERS: list[str] = ["AAPL", "NVDA", "MSFT"]
 
-START_DATE: str = "2023-01-01"
+START_DATE: str = "2020-01-01"
 # Default end date is "today" so the pipeline stays reproducible when run on
 # a fixed historical START_DATE but never goes stale. Override via CLI flag.
 END_DATE: str = datetime.date.today().isoformat()

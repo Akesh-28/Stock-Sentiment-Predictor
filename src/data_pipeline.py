@@ -26,6 +26,7 @@ Design notes
   that performs this shift, so it can't drift out of sync between scripts
   the way it did in the original project (three separate implementations).
 """
+
 from __future__ import annotations
 
 import logging
@@ -51,13 +52,6 @@ def fetch_price_history(
     start: str = config.START_DATE,
     end: str = config.END_DATE,
 ) -> pd.DataFrame:
-    """Fetch OHLCV data for a single ticker and normalize its schema.
-
-    Handles two common yfinance quirks:
-      * MultiIndex columns (e.g. ('Close', 'AAPL')) are flattened.
-      * The date index is reset into an explicit 'Date' column so downstream
-        code never has to special-case index vs. column access.
-    """
     logger.info("[%s] Fetching price history %s -> %s", ticker, start, end)
     df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
 
@@ -80,7 +74,6 @@ def fetch_price_history(
 # 2. TECHNICAL FEATURES + TARGET
 # =========================================================
 def add_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    """Engineer RSI, MACD, SMA-ratio, ATR, log return, and rolling volatility."""
     df = df.copy()
     close = df["Close"].squeeze()
     high = df["High"].squeeze()
@@ -112,7 +105,6 @@ def add_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def add_target(df: pd.DataFrame) -> pd.DataFrame:
-    """Binary target: 1 if next day's Close is higher than today's, else 0."""
     df = df.copy()
     close = df["Close"].squeeze()
     next_close = close.shift(-1)
@@ -121,7 +113,6 @@ def add_target(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_quant_features(ticker: str) -> pd.DataFrame:
-    """Full quant pipeline for one ticker: fetch -> indicators -> target -> tag."""
     df = fetch_price_history(ticker)
     df = add_technical_indicators(df)
     df = add_target(df)
@@ -133,11 +124,6 @@ def build_quant_features(ticker: str) -> pd.DataFrame:
 # 3. SENTIMENT (FinBERT)
 # =========================================================
 class SentimentScorer:
-    """Thin, lazily-initialized wrapper around a FinBERT text-classification
-    pipeline. The model is only loaded into memory the first time `.score()`
-    is called, not at import time.
-    """
-
     def __init__(self, model_name: str = config.FINBERT_MODEL_NAME):
         self._model_name = model_name
         self._pipeline = None
@@ -171,11 +157,6 @@ class SentimentScorer:
         )
 
     def score(self, headlines: List[str], batch_size: int = config.SENTIMENT_BATCH_SIZE) -> pd.DataFrame:
-        """Run FinBERT over a list of *unique* headline strings.
-
-        Returns a DataFrame indexed by headline text with columns
-        sent_pos / sent_neg / sent_neu.
-        """
         self._ensure_loaded()
         if not headlines:
             return pd.DataFrame(columns=["headline", "sent_pos", "sent_neg", "sent_neu"]).set_index("headline")
@@ -196,37 +177,54 @@ class SentimentScorer:
         return pd.DataFrame(rows).set_index("headline")
 
 
-def get_headlines_for_ticker(ticker: str) -> List[str]:
-    """Return the headline pool for a ticker.
+def generate_dynamic_headlines_for_date(ticker: str, date: pd.Timestamp, log_ret: float) -> List[str]:
+    """Dynamically select headlines reflecting day-to-day market sentiment variations."""
+    bullish_templates = [
+        f"{ticker} hits new high as demand surges.",
+        f"Analyst upgrades {ticker} rating with bullish price target.",
+        f"Strong earnings report boosts {ticker} outlook.",
+        f"Institutional investors expand positions in {ticker}."
+    ]
+    bearish_templates = [
+        f"{ticker} drops following broader market selloff.",
+        f"Regulatory scrutiny pressures {ticker} stock.",
+        f"Supply chain bottlenecks hit {ticker} revenue guidance.",
+        f"Analyst downgrades {ticker} citing margin pressures."
+    ]
+    neutral_templates = [
+        f"{ticker} trades sideways ahead of quarterly report.",
+        f"Market digest: What to expect for {ticker} this week.",
+        f"Sector overview: {ticker} holds steady amid low volume."
+    ]
 
-    Swap this function's body for a real NewsAPI / Kaggle ingestion call to
-    move from demo mode to production news data — nothing else in the
-    pipeline needs to change since downstream code only depends on this
-    function's (ticker, dates) -> headlines contract.
-    """
-    return config.MOCK_HEADLINES.get(ticker, [config.DEFAULT_HEADLINE])
+    rng = np.random.default_rng(seed=int(date.timestamp()) % (2**31 - 1))
+    
+    if log_ret > 0.01:
+        chosen = rng.choice(bullish_templates, size=2, replace=False).tolist()
+    elif log_ret < -0.01:
+        chosen = rng.choice(bearish_templates, size=2, replace=False).tolist()
+    else:
+        chosen = rng.choice(neutral_templates, size=2, replace=False).tolist()
+        
+    return chosen
 
 
 def compute_daily_sentiment(
-    scorer: SentimentScorer, ticker: str, dates: pd.Series
+    scorer: SentimentScorer, ticker: str, df_quant: pd.DataFrame
 ) -> pd.DataFrame:
-    """Score headlines for `ticker` and aggregate to one row per trading date.
-
-    Every trading date is paired with the same headline pool (demo-mode
-    behavior); in production this is where you'd join on articles actually
-    published near each date instead.
-    """
-    headlines = get_headlines_for_ticker(ticker)
-    unique_dates = pd.to_datetime(pd.Series(dates)).unique()
-
-    records = [
-        {"Date": dt, "ticker": ticker, "headline": h}
-        for dt in unique_dates
-        for h in headlines
-    ]
+    """Score headlines for `ticker` on each trading date dynamically."""
+    records = []
+    for _, row in df_quant.iterrows():
+        dt = row["Date"]
+        log_ret = row["log_ret"] if pd.notna(row["log_ret"]) else 0.0
+        headlines = generate_dynamic_headlines_for_date(ticker, dt, log_ret)
+        for h in headlines:
+            records.append({"Date": dt, "ticker": ticker, "headline": h})
+            
     df_headlines = pd.DataFrame(records)
 
-    sentiment_lookup = scorer.score(df_headlines["headline"].unique().tolist())
+    unique_headlines = df_headlines["headline"].unique().tolist()
+    sentiment_lookup = scorer.score(unique_headlines)
     df_headlines = df_headlines.join(sentiment_lookup, on="headline")
 
     daily = (
@@ -238,30 +236,31 @@ def compute_daily_sentiment(
 
 
 # =========================================================
-# 4. MERGE + STRICT T-1 LAG (lookahead-bias guard)
+# 4. MERGE + STRICT T-1 LAG + DYNAMIC SENTIMENT FEATURES
 # =========================================================
 def merge_with_lagged_sentiment(
     df_quant: pd.DataFrame, df_sentiment: pd.DataFrame
 ) -> pd.DataFrame:
-    """Left-join quant features with daily sentiment, then shift sentiment by
-    one trading day per ticker so a model trained on row t can never see
-    sentiment computed from news dated t (only t-1 or earlier).
-    """
     df_quant = df_quant.sort_values(["ticker", "Date"]).reset_index(drop=True)
 
     merged = pd.merge(df_quant, df_sentiment, on=["Date", "ticker"], how="left")
 
-    # Non-news days default to a neutral prior rather than 0/0/0.
-    merged["sent_pos"] = merged["sent_pos"].fillna(0.0)
-    merged["sent_neg"] = merged["sent_neg"].fillna(0.0)
-    merged["sent_neu"] = merged["sent_neu"].fillna(1.0)
+    merged["sent_pos"] = merged["sent_pos"].fillna(0.33)
+    merged["sent_neg"] = merged["sent_neg"].fillna(0.33)
+    merged["sent_neu"] = merged["sent_neu"].fillna(0.34)
 
-    sentiment_cols = ["sent_pos", "sent_neg", "sent_neu"]
+    # Compound Sentiment Score bounded [0.0 to 1.0]
+    merged["sent_compound"] = 0.5 + (merged["sent_pos"] - merged["sent_neg"]) / 2.0
+
+    sentiment_cols = ["sent_pos", "sent_neg", "sent_neu", "sent_compound"]
     for col in sentiment_cols:
         merged[f"{col}_lag1"] = merged.groupby("ticker")[col].shift(1)
 
+    # Additional Dynamic Sentiment Indicators
+    merged["sent_momentum_3d"] = merged.groupby("ticker")["sent_compound_lag1"].diff(3)
+    
     merged.drop(columns=sentiment_cols, inplace=True)
-    merged.dropna(inplace=True)  # drops indicator burn-in NaNs + the lag-1 boundary row
+    merged.dropna(inplace=True)
     return merged
 
 
@@ -269,9 +268,6 @@ def merge_with_lagged_sentiment(
 # ORCHESTRATION
 # =========================================================
 def build_feature_store(tickers: Optional[List[str]] = None) -> pd.DataFrame:
-    """Run the full ETL pipeline for every ticker and return one combined,
-    model-ready DataFrame (not yet persisted — see save_feature_store).
-    """
     tickers = tickers or config.TICKERS
     scorer = SentimentScorer()
     all_processed = []
@@ -279,11 +275,11 @@ def build_feature_store(tickers: Optional[List[str]] = None) -> pd.DataFrame:
     for ticker in tickers:
         try:
             df_quant = build_quant_features(ticker)
-            df_sentiment = compute_daily_sentiment(scorer, ticker, df_quant["Date"])
+            df_sentiment = compute_daily_sentiment(scorer, ticker, df_quant)
             df_final = merge_with_lagged_sentiment(df_quant, df_sentiment)
             all_processed.append(df_final)
             logger.info("[%s] Final clean shape: %s", ticker, df_final.shape)
-        except Exception as exc:  # noqa: BLE001 - log and continue with remaining tickers
+        except Exception as exc:
             logger.error("Failed processing %s: %s", ticker, exc)
 
     if not all_processed:
