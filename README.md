@@ -71,7 +71,7 @@ stock-sentiment-predictor/
 ## Setup
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/Akesh-28/stock_predictor_ml_pipeline
 cd stock-sentiment-predictor
 
 python -m venv venv
