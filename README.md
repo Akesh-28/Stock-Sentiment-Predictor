@@ -17,7 +17,7 @@ dashboard**.
 ---
 
 ### 📋 Aligned Data Explorer & FinBERT Scores
-![Data Explorer Table](assets/Sentiment Breakdown.png)
+![Data Explorer Table](assets/Screenshot(56).png)
 
 
 
