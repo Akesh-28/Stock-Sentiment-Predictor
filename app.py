@@ -95,7 +95,7 @@ def generate_demo_sentiment(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def demo_predict_next_day(recent_prices: pd.Series, recent_sentiment: float) -> tuple[str, float]:
-    price_return = (recent_prices.iloc[-1] - recent_prices.iloc[-5]) / recent_prices.iloc[-5]
+    price_return = (recent_prices.iloc[-1] - recent_prices.iloc[-5]) / recent_prices.iloc[-5] if len(recent_prices) >= 5 else 0.0
     signal_score = (price_return * 0.4) + (recent_sentiment * 0.6)
     confidence = float(np.clip(0.50 + abs(signal_score - 0.5) * 0.8, 0.52, 0.94))
     direction = "UP" if signal_score >= 0.45 else "DOWN"
@@ -146,7 +146,6 @@ if using_live_sentiment:
         on="Date",
         how="left",
     )
-    # Correct fillna using ffill() function directly to fix DeprecationWarning
     processed_df[["sent_pos_lag1", "sent_neg_lag1", "sent_neu_lag1", "sent_compound_lag1"]] = (
         processed_df[["sent_pos_lag1", "sent_neg_lag1", "sent_neu_lag1", "sent_compound_lag1"]].ffill().bfill()
     )
@@ -161,12 +160,20 @@ else:
 processed_df["Sentiment_MA"] = processed_df["Sentiment_Score"].rolling(window=rolling_window, min_periods=1).mean()
 
 # ==========================================
-# INFERENCE
+# INFERENCE & METRIC CALCULATION (SAFE FROM NANs)
 # ==========================================
-latest_close = float(processed_df["Close"].iloc[-1])
-prev_close = float(processed_df["Close"].iloc[-2]) if len(processed_df) > 1 else latest_close
-price_change_pct = ((latest_close - prev_close) / prev_close) * 100
-latest_sentiment = float(processed_df["Sentiment_Score"].iloc[-1])
+valid_price_df = processed_df.dropna(subset=["Close"])
+
+if not valid_price_df.empty:
+    latest_close = float(valid_price_df["Close"].iloc[-1])
+    prev_close = float(valid_price_df["Close"].iloc[-2]) if len(valid_price_df) > 1 else latest_close
+    price_change_pct = ((latest_close - prev_close) / prev_close) * 100
+else:
+    latest_close = 0.0
+    price_change_pct = 0.0
+
+valid_sentiment_series = processed_df["Sentiment_Score"].dropna()
+latest_sentiment = float(valid_sentiment_series.iloc[-1]) if not valid_sentiment_series.empty else 0.50
 
 if model is not None and using_live_sentiment:
     latest_row = processed_df.dropna(subset=config.FEATURE_COLS).iloc[[-1]]
@@ -176,9 +183,9 @@ if model is not None and using_live_sentiment:
         direction = "UP" if proba_up >= 0.5 else "DOWN"
         confidence = proba_up if direction == "UP" else 1 - proba_up
     else:
-        direction, confidence = demo_predict_next_day(processed_df["Close"], latest_sentiment)
+        direction, confidence = demo_predict_next_day(valid_price_df["Close"], latest_sentiment)
 else:
-    direction, confidence = demo_predict_next_day(processed_df["Close"], latest_sentiment)
+    direction, confidence = demo_predict_next_day(valid_price_df["Close"], latest_sentiment)
 
 # ==========================================
 # MAIN DASHBOARD UI

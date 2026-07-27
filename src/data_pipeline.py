@@ -26,7 +26,6 @@ Design notes
   that performs this shift, so it can't drift out of sync between scripts
   the way it did in the original project (three separate implementations).
 """
-
 from __future__ import annotations
 
 import logging
@@ -66,6 +65,9 @@ def fetch_price_history(
     if "Date" not in df.columns and "index" in df.columns:
         df.rename(columns={"index": "Date"}, inplace=True)
     df["Date"] = pd.to_datetime(df["Date"])
+
+    # 🔹 CLEANUP: Drop any trailing rows missing valid Close price data
+    df = df.dropna(subset=["Close"]).reset_index(drop=True)
 
     return df
 
