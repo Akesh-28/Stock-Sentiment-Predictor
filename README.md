@@ -12,7 +12,7 @@ dashboard**.
 ## 📸 Platform Previews
 
 ### 📈 Interactive Dashboard Overview
-![Stock Sentiment Dashboard Overview](assets/dashboard_overview.png)
+![Stock Sentiment Dashboard Overview](assets/dashboard_preview.png)
 
 ---
 
@@ -83,9 +83,6 @@ stock-sentiment-predictor/
 ```
 
 ---
-
-### 🔍 FinBERT Sentiment & Model Feature Importance
-![Feature Importance] <img width="1000" height="600" alt="image" src="https://github.com/user-attachments/assets/cceae6d9-6f09-43ea-a8e7-b2ab1ad69f7b" />
 
 
 ## Setup
