@@ -9,13 +9,20 @@ dashboard**.
 
 🚀 **Live Interactive Dashboard:** [stock-sentiment-predictor-akesh.streamlit.app](https://stock-sentiment-predictor-akesh.streamlit.app/)
 
----
-## 📸 Dashboard Preview
-| **Price vs. Rolling Sentiment** |
-![Dashboard Overview] <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/0e26960d-a5ea-4516-8fe5-bfb6f6e8a1d9" />
+## 📸 Platform Previews
 
-| **Sentiment Proportions Breakdown** |
-![Sentiment Breakdown] <img width="1920" height="1080" alt="image" src="https://github.com/user-attachments/assets/f81cbb84-6f7a-46ba-8852-13c3b4ecb4eb" />
+### 📈 Interactive Dashboard Overview
+![Stock Sentiment Dashboard Overview](assets/dashboard_overview.png)
+
+---
+
+### 📋 Aligned Data Explorer & FinBERT Scores
+![Data Explorer Table](assets/data_explorer.png)
+
+---
+
+### 🧪 XGBoost Feature Importance (Gain Score)
+![XGBoost Feature Importance](assets/feature_importance.png)
 
 ---
 
@@ -47,9 +54,7 @@ dashboard**.
                          Streamlit dashboard (app.py)
 ```
 
-> *(Replace this block with a rendered diagram image, e.g.
-> `docs/architecture.png`, once you have one — this ASCII version is a
-> placeholder.)*
+
 
 ### Directory layout
 
