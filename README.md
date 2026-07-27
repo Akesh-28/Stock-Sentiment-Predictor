@@ -17,7 +17,11 @@ dashboard**.
 ---
 
 ### 📋 Aligned Data Explorer & FinBERT Scores
-![Data Explorer Table](assets/Screenshot(56).png)
+![Data Explorer Table](assets/a.png)
+
+---
+### Data Distrisution & Sentiment
+![Data Explorer Table](assets/Sentiment_Breakdown.png)
 
 
 
